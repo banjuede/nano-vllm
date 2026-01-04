@@ -28,9 +28,9 @@ class BlockManager:
     def __init__(self, num_blocks: int, block_size: int):
         self.block_size = block_size
         self.blocks: list[Block] = [Block(i) for i in range(num_blocks)]
-        self.hash_to_block_id: dict[int, int] = dict()
-        self.free_block_ids: deque[int] = deque(range(num_blocks))
-        self.used_block_ids: set[int] = set()
+        self.hash_to_block_id: dict[int, int] = dict() # 存储token序列到块的映射关系
+        self.free_block_ids: deque[int] = deque(range(num_blocks)) # 空闲块ID队列
+        self.used_block_ids: set[int] = set() # 已使用的块ID集合
 
     @classmethod
     def compute_hash(cls, token_ids: list[int], prefix: int = -1):
@@ -90,9 +90,15 @@ class BlockManager:
         seq.num_cached_tokens = 0
         seq.block_table.clear()
 
+    # 这个方法用于判断是否可以为序列追加新的块，主要在解码阶段检查资源是否足够。
     def can_append(self, seq: Sequence) -> bool:
         return len(self.free_block_ids) >= (len(seq) % self.block_size == 1)
 
+    # 这个方法巧妙地处理了解码阶段序列增长过程中的缓存管理：
+    # 1. 当需要新块时分配空闲块
+    # 2. 当块填满时计算哈希值以便后续复用
+    # 3. 通过增量哈希计算保证前缀缓存的有效性
+    # 4. 维护哈希映射表以支持快速查找
     def may_append(self, seq: Sequence):
         block_table = seq.block_table
         last_block = self.blocks[block_table[-1]]
